@@ -1,0 +1,9 @@
+{
+  "name": "@chelav/sms-permission",
+  "version": "0.7.10",
+  "description": "SMS permission module for Expo",
+  "main": "index.ts",
+  "dependencies": {
+    "expo-modules-core": "*"
+  }
+}
