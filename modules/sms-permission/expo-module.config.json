@@ -1,8 +1,5 @@
 {
-  "platforms": ["apple", "android", "web"],
-  "apple": {
-    "modules": ["SmsPermissionModule"]
-  },
+  "platforms": ["android"],
   "android": {
     "modules": ["expo.modules.smspermission.SmsPermissionModule"]
   }
