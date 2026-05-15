@@ -11,7 +11,9 @@ import {
   insertAccountBalance,
   calculateBankBalance,
   calculateCreditCardBalance,
+  calculateIncrementalBalance,
   getTransactionsByAccount,
+  getLatestAccountBalance,
 } from './database';
 
 export interface FetchMessagesResult {
@@ -85,7 +87,9 @@ export async function fetchAndParseMessages(messages: SmsMessage[]): Promise<Fet
     errors: [],
   };
 
-  for (const message of messages) {
+  const sortedMessages = [...messages].sort((a, b) => a.date - b.date);
+
+  for (const message of sortedMessages) {
     try {
       const parsed = await ParserCore.parseSms(message.body, message.address, message.date);
       if (!parsed) {
@@ -115,16 +119,41 @@ export async function fetchAndParseMessages(messages: SmsMessage[]): Promise<Fet
       result.savedTransactions++;
 
       if (account) {
-        const transactions = await getTransactionsByAccount(account.id);
-        const balance = account.type === 'CREDIT_CARD'
-          ? calculateCreditCardBalance(transactions).outstanding.toString()
-          : calculateBankBalance(transactions).toString();
+        const latestBalance = await getLatestAccountBalance(account.id);
+        const currentBalance = latestBalance?.balance ?? '0';
+        const isCreditCard = account.type === 'CREDIT_CARD' || latestBalance?.isCreditCard === 1;
+
+        console.log('[BalanceDebug] Processing:', {
+          accountId: account.id,
+          accountName: account.name,
+          accountType: account.type,
+          currentBalance,
+          isCreditCard,
+          transactionType: entity.transactionType,
+          amount: entity.amount,
+          explicitBalance: parsed.balance,
+        });
+
+        const newBalance = calculateIncrementalBalance(
+          currentBalance,
+          entity.transactionType,
+          entity.amount,
+          account.type,
+          parsed.balance,
+          isCreditCard
+        );
+
+        console.log('[BalanceDebug] New balance calculated:', newBalance);
+
         await insertAccountBalance({
           accountId: account.id,
-          balance,
+          balance: newBalance,
           isManualOverride: 0,
           transactionId: txnId,
           createdAt: new Date().toISOString(),
+          sourceType: 'TRANSACTION',
+          smsSource: parsed.smsBody?.substring(0, 500) || null,
+          isCreditCard: isCreditCard ? 1 : 0,
         });
       }
     } catch (error) {

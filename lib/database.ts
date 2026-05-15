@@ -43,6 +43,9 @@ export interface AccountBalanceEntity {
   isManualOverride: number;
   transactionId: number | null;
   createdAt: string;
+  sourceType?: string;
+  smsSource?: string | null;
+  isCreditCard?: number;
 }
 
 export interface AccountWithBalance extends AccountEntity {
@@ -135,7 +138,22 @@ async function runMigrations(database: SQLite.SQLiteDatabase): Promise<void> {
     await database.execAsync('ALTER TABLE accounts ADD COLUMN lastTransactionDate TEXT');
   }
   if (!accountsResult.sql.includes('sourceType')) {
-    await database.execAsync('ALTER TABLE accounts ADD COLUMN sourceType TEXT DEFAULT AUTO CHECK (sourceType IN ("AUTO", "MANUAL"))');
+    await database.execAsync('ALTER TABLE accounts ADD COLUMN sourceType TEXT DEFAULT \'AUTO\' CHECK (sourceType IN (\'AUTO\', \'MANUAL\'))');
+  }
+
+  const balanceResult = await database.getFirstAsync<{ sql: string }>(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='account_balances'"
+  );
+  if (balanceResult) {
+    if (!balanceResult.sql.includes('sourceType')) {
+      await database.execAsync("ALTER TABLE account_balances ADD COLUMN sourceType TEXT DEFAULT 'TRANSACTION'");
+    }
+    if (!balanceResult.sql.includes('smsSource')) {
+      await database.execAsync('ALTER TABLE account_balances ADD COLUMN smsSource TEXT');
+    }
+    if (!balanceResult.sql.includes('isCreditCard')) {
+      await database.execAsync('ALTER TABLE account_balances ADD COLUMN isCreditCard INTEGER DEFAULT 0');
+    }
   }
 }
 
@@ -374,12 +392,23 @@ export async function updateAccount(id: number, updates: Partial<AccountEntity>)
   await database.runAsync(`UPDATE accounts SET ${sets.join(', ')} WHERE id = ?`, values);
 }
 
-export async function insertAccountBalance(balance: Omit<AccountBalanceEntity, 'id'>): Promise<number> {
+export async function insertAccountBalance(
+  balance: Omit<AccountBalanceEntity, 'id'> & { sourceType?: string; smsSource?: string | null; isCreditCard?: number }
+): Promise<number> {
   const database = await getDatabase();
   const result = await database.runAsync(
-    `INSERT INTO account_balances (accountId, balance, isManualOverride, transactionId, createdAt)
-     VALUES (?, ?, ?, ?, ?)`,
-    [balance.accountId, balance.balance, balance.isManualOverride, balance.transactionId, balance.createdAt]
+    `INSERT INTO account_balances (accountId, balance, isManualOverride, transactionId, createdAt, sourceType, smsSource, isCreditCard)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      balance.accountId,
+      balance.balance,
+      balance.isManualOverride,
+      balance.transactionId,
+      balance.createdAt,
+      balance.sourceType || 'TRANSACTION',
+      balance.smsSource || null,
+      balance.isCreditCard || 0
+    ]
   );
   return result.lastInsertRowId;
 }
@@ -387,7 +416,7 @@ export async function insertAccountBalance(balance: Omit<AccountBalanceEntity, '
 export async function getLatestAccountBalance(accountId: number): Promise<AccountBalanceEntity | null> {
   const database = await getDatabase();
   const result = await database.getFirstAsync<AccountBalanceEntity>(
-    'SELECT * FROM account_balances WHERE accountId = ? ORDER BY createdAt DESC LIMIT 1',
+    'SELECT * FROM account_balances WHERE accountId = ? ORDER BY createdAt DESC, id DESC LIMIT 1',
     [accountId]
   );
   return result;
@@ -496,10 +525,18 @@ export async function migrateExistingTransactions(): Promise<number> {
 export function calculateBankBalance(transactions: TransactionEntity[]): number {
   return transactions.reduce((sum, txn) => {
     const amount = parseFloat(txn.amount);
-    if (txn.transactionType === 'INCOME' || txn.transactionType === 'CREDIT') {
-      return sum + amount;
-    } else {
-      return sum - amount;
+    switch (txn.transactionType) {
+      case 'INCOME':
+        return sum + amount;
+      case 'EXPENSE':
+      case 'INVESTMENT':
+        return sum - amount;
+      case 'CREDIT':
+        return sum + amount;
+      case 'TRANSFER':
+        return sum;
+      default:
+        return sum;
     }
   }, 0);
 }
@@ -515,25 +552,69 @@ export function calculateMonthlySpent(transactions: TransactionEntity[], account
 export function calculateCreditCardBalance(transactions: TransactionEntity[]): { outstanding: number; monthlySpent: number } {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const startOfMonthStr = startOfMonth.toISOString();
 
   let outstanding = 0;
   let monthlySpent = 0;
 
   transactions.forEach(txn => {
     const amount = parseFloat(txn.amount);
-    const txnDate = new Date(txn.dateTime);
+    const txnDate = txn.dateTime;
 
-    if (txn.transactionType === 'EXPENSE') {
+    if (txn.transactionType === 'EXPENSE' || txn.transactionType === 'INVESTMENT') {
       outstanding += amount;
-      if (txnDate >= startOfMonth) {
+      if (txnDate >= startOfMonthStr) {
         monthlySpent += amount;
       }
     } else if (txn.transactionType === 'INCOME' || txn.transactionType === 'CREDIT') {
-      outstanding -= amount;
+      outstanding = Math.max(0, outstanding - amount);
     }
   });
 
   return { outstanding, monthlySpent };
+}
+
+export function calculateIncrementalBalance(
+  currentBalance: string,
+  transactionType: 'INCOME' | 'EXPENSE' | 'CREDIT' | 'TRANSFER' | 'INVESTMENT',
+  amount: string,
+  accountType: 'BANK_ACCOUNT' | 'CREDIT_CARD' | 'WALLET',
+  explicitBalance: string | null,
+  isCreditCard: boolean
+): string {
+  if (explicitBalance !== null && explicitBalance !== undefined && explicitBalance !== '') {
+    return explicitBalance;
+  }
+
+  const current = parseFloat(currentBalance || '0');
+  const delta = parseFloat(amount || '0');
+
+  if (isCreditCard || accountType === 'CREDIT_CARD') {
+    if (transactionType === 'EXPENSE' || transactionType === 'INVESTMENT') {
+      return (current + delta).toString();
+    }
+    if (transactionType === 'INCOME' || transactionType === 'CREDIT') {
+      return Math.max(0, current - delta).toString();
+    }
+    if (transactionType === 'TRANSFER') {
+      return current.toString();
+    }
+    return current.toString();
+  }
+
+  switch (transactionType) {
+    case 'INCOME':
+      return (current + delta).toString();
+    case 'EXPENSE':
+    case 'INVESTMENT':
+      return Math.max(0, current - delta).toString();
+    case 'CREDIT':
+      return (current + delta).toString();
+    case 'TRANSFER':
+      return current.toString();
+    default:
+      return current.toString();
+  }
 }
 
 export async function getAccountsWithBalances(): Promise<AccountWithBalance[]> {
