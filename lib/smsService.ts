@@ -1,6 +1,18 @@
 import { SmsMessage } from '@chelav/sms-permission';
 import ParserCore, { ParsedTransactionResult } from '@chelav/parser-core';
-import { insertTransaction, TransactionEntity, getTransactionByHash } from './database';
+import {
+  insertTransaction,
+  TransactionEntity,
+  getTransactionByHash,
+  createAccount,
+  getAllAccounts,
+  AccountEntity,
+  getAccountBalance,
+  insertAccountBalance,
+  calculateBankBalance,
+  calculateCreditCardBalance,
+  getTransactionsByAccount,
+} from './database';
 
 export interface FetchMessagesResult {
   totalMessages: number;
@@ -11,14 +23,15 @@ export interface FetchMessagesResult {
 
 function mapParsedToEntity(
   parsed: ParsedTransactionResult,
-  transactionHash: string
+  transactionHash: string,
+  accountId: number | null
 ): Omit<TransactionEntity, 'id'> {
   const now = new Date().toISOString();
   return {
     amount: parsed.amount,
     merchantName: parsed.merchant || 'Unknown',
     category: 'Others',
-    transactionType: parsed.type,
+    transactionType: parsed.type as 'INCOME' | 'EXPENSE' | 'CREDIT' | 'TRANSFER' | 'INVESTMENT',
     dateTime: new Date(parsed.timestamp).toISOString(),
     description: parsed.reference,
     smsBody: parsed.smsBody,
@@ -35,7 +48,33 @@ function mapParsedToEntity(
     fromAccount: parsed.fromAccount,
     toAccount: parsed.toAccount,
     reference: parsed.reference,
+    accountId,
   };
+}
+
+export async function getOrCreateAccountFromParsed(parsed: ParsedTransactionResult): Promise<AccountEntity | null> {
+  const accountLast4 = parsed.accountLast4 || 'XXXX';
+  const type = parsed.isFromCard ? 'CREDIT_CARD' : 'BANK_ACCOUNT';
+  const name = parsed.bankName || 'Unknown Bank';
+
+  const existing = await getAllAccounts();
+  const found = existing.find(
+    a => a.name === name && a.type === type
+  );
+  if (found) return found;
+
+  const now = new Date().toISOString();
+  const id = await createAccount({
+    name,
+    type,
+    currency: parsed.currency || 'INR',
+    lastTransactionDate: now,
+    sourceType: 'AUTO',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  return { id, name, type, currency: parsed.currency || 'INR', lastTransactionDate: now, sourceType: 'AUTO', createdAt: now, updatedAt: now };
 }
 
 export async function fetchAndParseMessages(messages: SmsMessage[]): Promise<FetchMessagesResult> {
@@ -69,9 +108,25 @@ export async function fetchAndParseMessages(messages: SmsMessage[]): Promise<Fet
       const existing = await getTransactionByHash(transactionHash);
       if (existing) continue;
 
-      const entity = mapParsedToEntity(parsed, transactionHash);
-      await insertTransaction(entity);
+      const account = await getOrCreateAccountFromParsed(parsed);
+
+      const entity = mapParsedToEntity(parsed, transactionHash, account?.id ?? null);
+      const txnId = await insertTransaction(entity);
       result.savedTransactions++;
+
+      if (account) {
+        const transactions = await getTransactionsByAccount(account.id);
+        const balance = account.type === 'CREDIT_CARD'
+          ? calculateCreditCardBalance(transactions).outstanding.toString()
+          : calculateBankBalance(transactions).toString();
+        await insertAccountBalance({
+          accountId: account.id,
+          balance,
+          isManualOverride: 0,
+          transactionId: txnId,
+          createdAt: new Date().toISOString(),
+        });
+      }
     } catch (error) {
       result.errors.push(`Error processing message ${message.id}: ${error}`);
     }
