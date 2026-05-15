@@ -47,3 +47,25 @@ The module's `expo-module.config.json` must use fully qualified class name for A
 - Expo SDK 54, React Native 0.81.5, React 19.1.0
 - expo-router, react-native-reanimated ~4.1.0, react-native-worklets 0.5.1
 - @gluestack-ui/* for UI components
+- expo-sqlite for local database
+- @chelav/parser-core for bank SMS parsing
+- @chelav/sms-permission for SMS access
+
+## Database (expo-sqlite)
+- Location: `lib/database.ts`
+- Table: `transactions` with columns for amount, merchantName, category, transactionType, dateTime, etc.
+- Use `getCurrentMonthTransactions()` to fetch this month's parsed transactions
+- Use `insertTransaction()` to save new parsed transactions
+
+## SMS Parsing
+- Location: `lib/smsService.ts`
+- Uses `BankParserFactory` from `@chelav/parser-core` to parse SMS messages
+- `fetchAndParseMessages()` - parses SMS array and saves to database
+- `filterCurrentMonthMessages()` - filters messages to current month only
+- Supported banks: HDFCBank (sender IDs: HDFCBK, HDFCBANK, HDFC, HDFCB)
+- Transaction types: INCOME, EXPENSE, CREDIT, TRANSFER, INVESTMENT, BALANCE_UPDATE
+
+## Settings Screen (tab2.tsx)
+- "Fetch This Month's Messages" button triggers SMS parsing
+- Requires SMS permission to be granted
+- Shows sync results: total messages, parsed, saved, errors

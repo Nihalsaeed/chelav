@@ -1,0 +1,12 @@
+{
+  "name": "@chelav/parser-core",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "types": "src/ParserCoreModule.ts",
+  "dependencies": {
+    "expo-modules-core": "*"
+  },
+  "peerDependencies": {
+    "expo": "^54.0.0"
+  }
+}
