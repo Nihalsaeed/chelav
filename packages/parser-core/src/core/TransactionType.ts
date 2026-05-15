@@ -1,8 +1,0 @@
-export enum TransactionType {
-  INCOME = 'INCOME',
-  EXPENSE = 'EXPENSE',
-  CREDIT = 'CREDIT',
-  TRANSFER = 'TRANSFER',
-  INVESTMENT = 'INVESTMENT',
-  BALANCE_UPDATE = 'BALANCE_UPDATE',
-}
