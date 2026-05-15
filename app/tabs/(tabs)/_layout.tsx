@@ -1,6 +1,8 @@
 import React from 'react';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs } from 'expo-router';
+import { TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 
 function TabBarIcon(props: {
@@ -10,13 +12,21 @@ function TabBarIcon(props: {
   return <FontAwesome size={18} style={{ marginBottom: -3 }} {...props} />;
 }
 
+function SettingsButton() {
+  const router = useRouter();
+  return (
+    <TouchableOpacity onPress={() => router.push('/settings')} style={{ marginRight: 16 }}>
+      <FontAwesome name="cog" size={22} color="#000" />
+    </TouchableOpacity>
+  );
+}
+
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
         headerShown: useClientOnlyValue(false, true),
+        headerRight: () => <SettingsButton />,
       }}
     >
       <Tabs.Screen
@@ -27,10 +37,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="tab2"
+        name="wallet"
         options={{
-          title: 'Settings',
-          tabBarIcon: ({ color }) => <TabBarIcon name="cog" color={color} />,
+          title: 'Wallet',
+          tabBarIcon: ({ color }) => <TabBarIcon name="credit-card" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="stats"
+        options={{
+          title: 'Stats',
+          tabBarIcon: ({ color }) => <TabBarIcon name="bar-chart" color={color} />,
         }}
       />
     </Tabs>

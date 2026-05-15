@@ -10,7 +10,7 @@ import { Alert, AlertText } from '@/components/ui/alert';
 import SmsPermissionModule from '@chelav/sms-permission';
 import { fetchAndParseMessages, filterCurrentMonthMessages, FetchMessagesResult } from '@/lib/smsService';
 
-export default function Tab2() {
+export default function Settings() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<FetchMessagesResult | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
