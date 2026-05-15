@@ -21,14 +21,16 @@ export default function Settings() {
     setPermissionDenied(false);
 
     try {
-      const hasPermission = await SmsPermissionModule.checkSmsPermission();
+      let hasPermission = await SmsPermissionModule.checkSmsPermission();
       if (!hasPermission) {
         const granted = await SmsPermissionModule.requestSmsPermission();
-        if (!granted) {
-          setPermissionDenied(true);
-          setIsLoading(false);
-          return;
-        }
+        hasPermission = granted;
+      }
+
+      if (!hasPermission) {
+        setPermissionDenied(true);
+        setIsLoading(false);
+        return;
       }
 
       const messages = await SmsPermissionModule.getSmsMessages(1000);
@@ -75,7 +77,7 @@ export default function Settings() {
           {permissionDenied && (
             <Alert className="w-full" variant="solid" action="error">
               <AlertText>
-                SMS permission denied. Please enable it in app settings.
+                SMS permission denied. Tap the button above to request access again.
               </AlertText>
             </Alert>
           )}

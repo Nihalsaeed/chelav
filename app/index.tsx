@@ -4,7 +4,10 @@ import { Text } from '@/components/ui/text';
 import { Button, ButtonText } from '@/components/ui/button';
 import { VStack } from '@/components/ui/vstack';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import SmsPermission, { SmsMessage } from '@/modules/sms-permission';
+
+const ONBOARDING_COMPLETED_KEY = 'onboarding_completed';
 
 const PRIVACY_POINTS = [
   'Only transaction messages are processed',
@@ -19,13 +22,24 @@ export default function Onboarding() {
   const [isChecking, setIsChecking] = useState(true);
 
   useEffect(() => {
-    checkPermission();
+    checkPermissionAndOnboarding();
   }, []);
 
-  const checkPermission = async () => {
+  const checkPermissionAndOnboarding = async () => {
     try {
+      const completed = await AsyncStorage.getItem(ONBOARDING_COMPLETED_KEY);
       const granted = SmsPermission.checkSmsPermission();
       setHasPermission(granted);
+
+      if (completed === 'true' && granted) {
+        router.replace('/tabs/tab1');
+        return;
+      }
+
+      if (completed === 'true' && !granted) {
+        router.replace('/tabs/tab1');
+        return;
+      }
     } catch (error) {
       console.error('Error checking permission:', error);
     } finally {
@@ -40,6 +54,7 @@ export default function Onboarding() {
       setHasPermission(granted);
 
       if (granted) {
+        await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
         router.push('/tabs/tab1');
       }
     } catch (error) {
@@ -47,7 +62,8 @@ export default function Onboarding() {
     }
   };
 
-  const handleSkip = () => {
+  const handleSkip = async () => {
+    await AsyncStorage.setItem(ONBOARDING_COMPLETED_KEY, 'true');
     router.push('/tabs/tab1');
   };
 
