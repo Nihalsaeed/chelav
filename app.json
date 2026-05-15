@@ -6,6 +6,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "starterkitexpo",
+    "userInterfaceStyle": "automatic",
     "plugins": [
       "expo-router",
       "expo-font",
