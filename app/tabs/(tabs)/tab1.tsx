@@ -5,16 +5,9 @@ import { Card } from '@/components/ui/card';
 import { VStack } from '@/components/ui/vstack';
 import { HStack } from '@/components/ui/hstack';
 import { FlatList } from '@/components/ui/flat-list';
-import { useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { Pressable } from '@/components/ui/pressable';
+import { useLocalSearchParams, useFocusEffect, useRouter } from 'expo-router';
 import { getCurrentMonthTransactions, TransactionEntity } from '@/lib/database';
-
-const TRANSACTIONS = [
-  { id: '1', title: 'Grocery Shopping', amount: -45.99, date: 'Today' },
-  { id: '2', title: 'Salary Deposit', amount: 2500.0, date: 'Yesterday' },
-  { id: '3', title: 'Electric Bill', amount: -89.99, date: 'May 12' },
-  { id: '4', title: 'Restaurant', amount: -32.50, date: 'May 10' },
-  { id: '5', title: 'Freelance Work', amount: 500.0, date: 'May 8' },
-];
 
 function getGreeting() {
   const hour = new Date().getHours();
@@ -38,24 +31,27 @@ function formatDate(dateString: string): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function TransactionItem({ title, amount, date }: { title: string; amount: number; date: string }) {
+function TransactionItem({ title, amount, date, onPress }: { title: string; amount: number; date: string; onPress: () => void }) {
   return (
-    <Box className="py-4 border-b border-background-200">
-      <HStack className="justify-between items-center">
-        <VStack space="xs">
-          <Text className="text-typography-900 font-medium">{title}</Text>
-          <Text className="text-typography-500 text-sm">{date}</Text>
-        </VStack>
-        <Text className={`font-semibold ${amount >= 0 ? 'text-success-500' : 'text-typography-900'}`}>
-          {amount >= 0 ? '+' : ''}${Math.abs(amount).toFixed(2)}
-        </Text>
-      </HStack>
-    </Box>
+    <Pressable onPress={onPress}>
+      <Box className="py-4 border-b border-background-200">
+        <HStack className="justify-between items-center">
+          <VStack space="xs">
+            <Text className="text-typography-900 font-medium">{title}</Text>
+            <Text className="text-typography-500 text-sm">{date}</Text>
+          </VStack>
+          <Text className={`font-semibold ${amount >= 0 ? 'text-success-500' : 'text-typography-900'}`}>
+            {amount >= 0 ? '+' : ''}${Math.abs(amount).toFixed(2)}
+          </Text>
+        </HStack>
+      </Box>
+    </Pressable>
   );
 }
 
 export default function Dashboard() {
   const { name } = useLocalSearchParams<{ name: string }>();
+  const router = useRouter();
   const [transactions, setTransactions] = useState<TransactionEntity[]>([]);
   const [balance, setBalance] = useState('$0.00');
   const [isLoading, setIsLoading] = useState(true);
@@ -116,6 +112,7 @@ export default function Dashboard() {
                   title={item.merchantName}
                   amount={item.transactionType === 'INCOME' ? parseFloat(item.amount) : -parseFloat(item.amount)}
                   date={formatDate(item.dateTime)}
+                  onPress={() => router.push(`/transaction/${item.id}`)}
                 />
               )}
             />
