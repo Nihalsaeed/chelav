@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Center } from '@/components/ui/center';
 import { Divider } from '@/components/ui/divider';
 import { Heading } from '@/components/ui/heading';
@@ -7,13 +7,71 @@ import { VStack } from '@/components/ui/vstack';
 import { Button, ButtonText } from '@/components/ui/button';
 import { Spinner } from '@/components/ui/spinner';
 import { Alert, AlertText } from '@/components/ui/alert';
+import { Switch } from '@/components/ui/switch';
+import { HStack } from '@/components/ui/hstack';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import SmsPermissionModule from '@chelav/sms-permission';
 import { fetchAndParseMessages, filterCurrentMonthMessages, FetchMessagesResult } from '@/lib/smsService';
+import { autoSmsService, AutoSyncState } from '@/lib/autoSmsService';
+
+const AUTO_SYNC_ENABLED_KEY = 'auto_sync_enabled';
+const AUTO_SYNC_STATE_KEY = 'auto_sync_state';
 
 export default function Settings() {
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<FetchMessagesResult | null>(null);
   const [permissionDenied, setPermissionDenied] = useState(false);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [autoSyncState, setAutoSyncState] = useState<AutoSyncState>('idle');
+  const [newTransactions, setNewTransactions] = useState(0);
+
+  useEffect(() => {
+    const loadSavedState = async () => {
+      try {
+        const saved = await AsyncStorage.getItem(AUTO_SYNC_ENABLED_KEY);
+        if (saved === 'true') {
+          const currentState = autoSmsService.getState();
+          if (currentState === 'listening') {
+            setAutoSyncEnabled(true);
+            setAutoSyncState('listening');
+          } else {
+            const started = await autoSmsService.start({
+              onStateChange: (state) => {
+                setAutoSyncState(state);
+                if (state === 'listening') {
+                  setAutoSyncEnabled(true);
+                }
+              },
+              onNewTransaction: (count) => setNewTransactions(prev => prev + count),
+              onError: (error) => console.error('[AutoSync]', error),
+            });
+            setAutoSyncEnabled(started);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to restore auto sync state', e);
+      }
+    };
+    loadSavedState();
+  }, []);
+
+  const handleToggleAutoSync = useCallback(async (enabled: boolean) => {
+    if (enabled) {
+      const started = await autoSmsService.start({
+        onStateChange: setAutoSyncState,
+        onNewTransaction: (count) => setNewTransactions(prev => prev + count),
+        onError: (error) => console.error('[AutoSync]', error),
+      });
+      setAutoSyncEnabled(started);
+      if (started) {
+        await AsyncStorage.setItem(AUTO_SYNC_ENABLED_KEY, 'true');
+      }
+    } else {
+      await autoSmsService.stop();
+      setAutoSyncEnabled(false);
+      await AsyncStorage.setItem(AUTO_SYNC_ENABLED_KEY, 'false');
+    }
+  }, []);
 
   const handleFetchMessages = useCallback(async () => {
     setIsLoading(true);
@@ -56,7 +114,35 @@ export default function Settings() {
         <Divider className="my-4" />
 
         <VStack space="md" className="items-center">
-          <Heading size="sm" className="text-typography-700">SMS Sync</Heading>
+          <Heading size="sm" className="text-typography-700">Auto-Sync</Heading>
+          <Text className="text-typography-500 text-center">
+            Automatically update transactions when you receive bank SMS messages.
+          </Text>
+
+          <HStack space="md" className="items-center mt-2">
+            <Switch
+              value={autoSyncEnabled}
+              onValueChange={handleToggleAutoSync}
+              size="md"
+            />
+            <Text className="text-typography-600">
+              {autoSyncEnabled
+                ? autoSyncState === 'processing'
+                  ? 'Processing new SMS...'
+                  : 'Listening for new messages'
+                : 'Disabled'}
+            </Text>
+          </HStack>
+
+          {newTransactions > 0 && (
+            <Text className="text-success-600 font-medium">
+              {newTransactions} new transaction{newTransactions > 1 ? 's' : ''} added!
+            </Text>
+          )}
+
+          <Divider className="my-4 w-full" />
+
+          <Heading size="sm" className="text-typography-700">Manual Sync</Heading>
           <Text className="text-typography-500 text-center">
             Fetch and parse bank SMS messages from this month to populate your transactions.
           </Text>
